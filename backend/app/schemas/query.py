@@ -18,11 +18,15 @@ class QueryRequest(BaseModel):
     )
 
 
+from app.schemas.clarification import ClarificationResponse
+
 class QueryResponse(BaseModel):
-    """Successful response from POST /query."""
+    """Response from POST /query."""
     question: str
-    sql: str
-    results: list[dict[str, Any]]
+    needs_clarification: bool = False
+    clarification: ClarificationResponse | None = None
+    sql: str | None = None
+    results: list[dict[str, Any]] | None = None
 
 
 class ErrorResponse(BaseModel):

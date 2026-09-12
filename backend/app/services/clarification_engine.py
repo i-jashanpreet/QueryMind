@@ -22,7 +22,8 @@ class ClarificationEngine:
 
         # RULE 2: Ranking metric ambiguity
         is_ranking = analysis.intent == "ranking" or any(w in analysis.question.lower() for w in ["best", "top"])
-        if is_ranking and not analysis.metric:
+        is_ambiguous_ranking = is_ranking and (not analysis.metric or "best" in analysis.question.lower() or "top" in analysis.question.lower())
+        if is_ambiguous_ranking:
             return ClarificationResponse(
                 needs_clarification=True,
                 question="What do you mean by 'best products'?" if "product" in analysis.question.lower() else "What metric should I use for ranking?",
