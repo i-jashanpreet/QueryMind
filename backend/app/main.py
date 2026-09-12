@@ -60,42 +60,120 @@ def analyze(body: QueryRequest) -> QueryAnalysis:
 
 
 from app.services.clarification_engine import ClarificationEngine
-
-# ───────────────────────────── query ──────────────────────────────
-
+from app.services.conversation_manager import ConversationManager
 
 @app.post("/query", response_model=QueryResponse)
 def query(body: QueryRequest, db: Session = Depends(get_db)) -> QueryResponse:
     """
     Accept a natural-language question.
-    1. Analyze the question.
-    2. Check if clarification is needed (return early if ambiguous).
-    3. Generate SQL via Ollama, validate it, execute against PostgreSQL, and return results.
+    Handles conversation state and clarification resolution.
+    Generates SQL via Ollama, validates it, executes against PostgreSQL, and returns results.
     """
-    # 1 — Analyze the question
-    try:
-        analysis = analyze_query(question=body.question, engine=engine)
-    except QueryAnalysisError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+    conversation_id = body.conversation_id
+    question_to_process = body.question
+    analysis_for_sql = None
 
-    # 2 — Check clarification
-    clarification_resp = ClarificationEngine.generate(analysis)
-    if clarification_resp.needs_clarification:
-        return QueryResponse(
-            question=body.question,
-            needs_clarification=True,
-            clarification=clarification_resp,
-            sql=None,
-            results=None
-        )
+    if conversation_id:
+        conv_state = ConversationManager.get_conversation(conversation_id)
+        if not conv_state:
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+            
+        if conv_state.pending_clarification:
+            answer = body.question.strip()
+            answer_lower = answer.lower()
+            matched_value = None
+            
+            if conv_state.clarification and conv_state.clarification.options:
+                for opt in conv_state.clarification.options:
+                    if answer_lower == opt.value.lower() or answer_lower == opt.label.lower():
+                        matched_value = opt.value
+                        break
+                        
+                if not matched_value:
+                    # Invalid answer -> return clarification again
+                    return QueryResponse(
+                        conversation_id=conversation_id,
+                        question=conv_state.original_question,
+                        needs_clarification=True,
+                        clarification=conv_state.clarification,
+                        sql=None,
+                        results=None
+                    )
+            else:
+                matched_value = answer
+                
+            # Update analysis
+            analysis = conv_state.query_analysis
+            ctype = conv_state.clarification_type
+            if ctype == "ranking_metric":
+                analysis.metric = matched_value
+            elif ctype == "time_range":
+                analysis.time_range = matched_value
+            elif ctype == "entity":
+                if not analysis.entities:
+                    analysis.entities = []
+                analysis.entities.append(matched_value)
+                
+            ConversationManager.update_conversation(
+                conversation_id,
+                query_analysis=analysis,
+                pending_clarification=False
+            )
+            
+            question_to_process = conv_state.original_question
+            analysis_for_sql = analysis
 
-    # 3 — Generate + validate SQL
+    # Standard flow (new query or re-analyzing non-pending)
+    if not analysis_for_sql:
+        try:
+            analysis_for_sql = analyze_query(question=question_to_process, engine=engine)
+        except QueryAnalysisError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+        clarification_resp = ClarificationEngine.generate(analysis_for_sql)
+        
+        if clarification_resp.needs_clarification:
+            if not conversation_id:
+                conversation_id = ConversationManager.create_conversation(
+                    original_question=question_to_process,
+                    query_analysis=analysis_for_sql,
+                    clarification=clarification_resp,
+                    clarification_type=clarification_resp.clarification_type
+                )
+            else:
+                ConversationManager.update_conversation(
+                    conversation_id,
+                    query_analysis=analysis_for_sql,
+                    clarification=clarification_resp,
+                    clarification_type=clarification_resp.clarification_type,
+                    pending_clarification=True
+                )
+                
+            return QueryResponse(
+                conversation_id=conversation_id,
+                question=question_to_process,
+                needs_clarification=True,
+                clarification=clarification_resp,
+                sql=None,
+                results=None
+            )
+            
+        # Create conversation for a clear query if it doesn't exist
+        if not conversation_id:
+            conversation_id = ConversationManager.create_conversation(
+                original_question=question_to_process,
+                query_analysis=analysis_for_sql,
+                clarification=None,
+                clarification_type=None
+            )
+
+    # Generate + validate SQL
     try:
-        sql = generate_sql(question=body.question, engine=engine)
+        sql = generate_sql(question=question_to_process, engine=engine, analysis=analysis_for_sql)
     except TextToSQLError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
-    # 4 — Execute the validated SELECT
+    # Execute the validated SELECT
     try:
         result = db.execute(text(sql))
         columns: list[str] = list(result.keys())
@@ -108,9 +186,10 @@ def query(body: QueryRequest, db: Session = Depends(get_db)) -> QueryResponse:
             detail=f"SQL execution error: {exc}",
         )
 
-    # 5 — Return
+    # Return
     return QueryResponse(
-        question=body.question,
+        conversation_id=conversation_id,
+        question=question_to_process,
         needs_clarification=False,
         sql=sql,
         results=rows,

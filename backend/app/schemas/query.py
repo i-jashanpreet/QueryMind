@@ -16,12 +16,14 @@ class QueryRequest(BaseModel):
         description="A natural-language question about the database.",
         examples=["Show me the top 5 products by revenue"],
     )
+    conversation_id: str | None = Field(default=None, description="Optional ID to resume a pending clarification.")
 
 
 from app.schemas.clarification import ClarificationResponse
 
 class QueryResponse(BaseModel):
     """Response from POST /query."""
+    conversation_id: str | None = Field(default=None, description="ID of the conversation for subsequent requests.")
     question: str
     needs_clarification: bool = False
     clarification: ClarificationResponse | None = None

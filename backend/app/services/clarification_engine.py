@@ -15,6 +15,7 @@ class ClarificationEngine:
         if not analysis.entities:
             return ClarificationResponse(
                 needs_clarification=True,
+                clarification_type="entity",
                 question="Which entity should I calculate this for?",
                 options=[],
                 reason="The target entity is missing."
@@ -26,6 +27,7 @@ class ClarificationEngine:
         if is_ambiguous_ranking:
             return ClarificationResponse(
                 needs_clarification=True,
+                clarification_type="ranking_metric",
                 question="What do you mean by 'best products'?" if "product" in analysis.question.lower() else "What metric should I use for ranking?",
                 options=[
                     ClarificationOption(label="Highest revenue", value="revenue"),
@@ -40,6 +42,7 @@ class ClarificationEngine:
         if any(kw in missing_text for kw in ["time", "date", "period"]):
             return ClarificationResponse(
                 needs_clarification=True,
+                clarification_type="time_range",
                 question="What time period would you like?",
                 options=[
                     ClarificationOption(label="Today", value="today"),
@@ -56,6 +59,7 @@ class ClarificationEngine:
         reason = analysis.ambiguities[0] if analysis.ambiguities else (analysis.missing_information[0] if analysis.missing_information else "The query is ambiguous.")
         return ClarificationResponse(
             needs_clarification=True,
+            clarification_type="generic",
             question="Could you clarify your request?",
             options=[],
             reason=reason

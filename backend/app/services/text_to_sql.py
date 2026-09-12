@@ -77,7 +77,9 @@ class TextToSQLError(Exception):
     pass
 
 
-def generate_sql(question: str, engine: Engine) -> str:
+from app.schemas.analysis import QueryAnalysis
+
+def generate_sql(question: str, engine: Engine, analysis: QueryAnalysis | None = None) -> str:
     """
     Convert a natural-language *question* into a validated PostgreSQL
     SELECT query.
@@ -92,6 +94,7 @@ def generate_sql(question: str, engine: Engine) -> str:
     Args:
         question: The user's natural-language question.
         engine:   The SQLAlchemy engine (used for schema introspection).
+        analysis: Optional structured QueryAnalysis to guide the generation (used after clarification).
 
     Returns:
         A validated SQL SELECT string.
@@ -107,6 +110,15 @@ def generate_sql(question: str, engine: Engine) -> str:
 
     # 2 — prompt
     system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(schema=schema_text)
+    
+    if analysis:
+        system_prompt += "\n\nADDITIONAL CONSTRAINTS FROM ANALYSIS:"
+        if analysis.metric:
+            system_prompt += f"\n- Ensure the query calculates or orders by the metric: '{analysis.metric}'"
+        if analysis.time_range:
+            system_prompt += f"\n- Ensure the query filters by the time range: '{analysis.time_range}'"
+        if analysis.entities:
+            system_prompt += f"\n- Ensure the query focuses on these entities: {', '.join(analysis.entities)}"
 
     # 3 — LLM
     try:

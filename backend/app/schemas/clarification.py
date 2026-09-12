@@ -6,6 +6,7 @@ class ClarificationOption(BaseModel):
 
 class ClarificationResponse(BaseModel):
     needs_clarification: bool = Field(description="True if clarification is required.")
+    clarification_type: str | None = Field(default=None, description="Type of ambiguity (e.g., 'ranking_metric', 'time_range', 'entity').")
     question: str | None = Field(default=None, description="The clarification question to ask the user.")
     options: list[ClarificationOption] = Field(default_factory=list, description="Multiple choice options, if applicable.")
     reason: str | None = Field(default=None, description="Reason why clarification is needed.")

@@ -13,7 +13,7 @@ OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 
 # Generous timeout: local LLM inference can be slow on first load
-_TIMEOUT = httpx.Timeout(timeout=120.0, connect=10.0)
+_TIMEOUT = httpx.Timeout(timeout=300.0, connect=10.0)
 
 
 def generate(prompt: str, system: str = "") -> str:
