@@ -6,7 +6,9 @@ from sqlalchemy import text
 
 from app.database import get_db, engine
 from app.schemas.query import QueryRequest, QueryResponse
+from app.schemas.analysis import QueryAnalysis
 from app.services.text_to_sql import generate_sql, TextToSQLError
+from app.services.query_analyzer import analyze_query, QueryAnalysisError
 
 app = FastAPI(title="QueryMind API")
 
@@ -38,6 +40,23 @@ def db_health(db: Session = Depends(get_db)) -> dict[str, str]:
             status_code=503,
             detail=f"Database unavailable: {exc}",
         )
+
+
+# ───────────────────────────── analyze ────────────────────────────
+
+
+@app.post("/analyze", response_model=QueryAnalysis)
+def analyze(body: QueryRequest) -> QueryAnalysis:
+    """
+    Analyze a natural-language question and return structured JSON
+    describing intent, entities, metrics, ambiguities, etc.
+
+    Does NOT generate or execute SQL.
+    """
+    try:
+        return analyze_query(question=body.question, engine=engine)
+    except QueryAnalysisError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 # ───────────────────────────── query ──────────────────────────────
