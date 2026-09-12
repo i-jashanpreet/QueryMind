@@ -1,10 +1,17 @@
+from typing import Any
+
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from app.database import get_db
+from app.database import get_db, engine
+from app.schemas.query import QueryRequest, QueryResponse
+from app.services.text_to_sql import generate_sql, TextToSQLError
 
 app = FastAPI(title="QueryMind API")
+
+
+# ───────────────────────────── health ─────────────────────────────
 
 
 @app.get("/")
@@ -31,3 +38,39 @@ def db_health(db: Session = Depends(get_db)) -> dict[str, str]:
             status_code=503,
             detail=f"Database unavailable: {exc}",
         )
+
+
+# ───────────────────────────── query ──────────────────────────────
+
+
+@app.post("/query", response_model=QueryResponse)
+def query(body: QueryRequest, db: Session = Depends(get_db)) -> QueryResponse:
+    """
+    Accept a natural-language question, generate SQL via Ollama,
+    validate it, execute it against PostgreSQL, and return the results.
+    """
+    # 1 — Generate + validate SQL
+    try:
+        sql = generate_sql(question=body.question, engine=engine)
+    except TextToSQLError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    # 2 — Execute the validated SELECT
+    try:
+        result = db.execute(text(sql))
+        columns: list[str] = list(result.keys())
+        rows: list[dict[str, Any]] = [
+            dict(zip(columns, row)) for row in result.fetchall()
+        ]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"SQL execution error: {exc}",
+        )
+
+    # 3 — Return
+    return QueryResponse(
+        question=body.question,
+        sql=sql,
+        results=rows,
+    )
