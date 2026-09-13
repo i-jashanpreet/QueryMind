@@ -23,7 +23,7 @@ class ClarificationEngine:
 
         # RULE 2: Ranking metric ambiguity
         is_ranking = analysis.intent == "ranking" or any(w in analysis.question.lower() for w in ["best", "top"])
-        is_ambiguous_ranking = is_ranking and (not analysis.metric or "best" in analysis.question.lower() or "top" in analysis.question.lower())
+        is_ambiguous_ranking = is_ranking and not analysis.metric
         if is_ambiguous_ranking:
             return ClarificationResponse(
                 needs_clarification=True,
@@ -52,6 +52,11 @@ class ClarificationEngine:
                 ],
                 reason="A time range is missing."
             )
+            
+        # OVERRIDE: If it's a ranking query that has an explicit metric and entities, 
+        # the LLM's uncertainty is likely a false positive. We can proceed.
+        if is_ranking and analysis.metric and analysis.entities:
+            return ClarificationResponse(needs_clarification=False)
 
         # RULE 5: Existing analyzer-generated clarification
         # If we got here, it means needs_clarification is True but we didn't hit our specific rules.

@@ -143,3 +143,53 @@ def test_never_return_more_than_5_options():
         assert opt.label != ""
         assert opt.value != ""
 
+
+def test_explicit_ranking_metric_revenue_override():
+    """Regression test: explicit ranking metric 'revenue' does not trigger clarification."""
+    analysis = QueryAnalysis(
+        question="Show me the top 5 products by revenue",
+        intent="ranking",
+        entities=["products"],
+        metric="revenue",
+        limit=5,
+        sort_order="desc",
+        needs_clarification=True  # Simulate LLM false positive
+    )
+    resp = ClarificationEngine.generate(analysis)
+    assert resp.needs_clarification is False
+
+def test_explicit_ranking_metric_units_sold_override():
+    """Regression test: explicit ranking metric 'units sold' does not trigger clarification."""
+    analysis = QueryAnalysis(
+        question="Show me the top products by units sold",
+        intent="ranking",
+        entities=["products"],
+        metric="units_sold",
+        needs_clarification=True
+    )
+    resp = ClarificationEngine.generate(analysis)
+    assert resp.needs_clarification is False
+
+def test_explicit_ranking_metric_rating_override():
+    """Regression test: explicit ranking metric 'rating' does not trigger clarification."""
+    analysis = QueryAnalysis(
+        question="Show me the top products by rating",
+        intent="ranking",
+        entities=["products"],
+        metric="rating",
+        needs_clarification=True
+    )
+    resp = ClarificationEngine.generate(analysis)
+    assert resp.needs_clarification is False
+
+def test_explicit_ranking_metric_profit_override():
+    """Regression test: explicit ranking metric 'profit' does not trigger clarification."""
+    analysis = QueryAnalysis(
+        question="Show me the top products by profit",
+        intent="ranking",
+        entities=["products"],
+        metric="profit",
+        needs_clarification=True
+    )
+    resp = ClarificationEngine.generate(analysis)
+    assert resp.needs_clarification is False
