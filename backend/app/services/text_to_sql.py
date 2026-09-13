@@ -28,6 +28,7 @@ RULES:
 8. End the query with a semicolon.
 9. Do NOT wrap the output in markdown code fences (``` or ```sql).
 10. Do NOT include any text before or after the SQL.
+11. If you use aggregate functions (e.g. SUM, AVG), you MUST include ALL non-aggregate columns from the SELECT clause in your GROUP BY clause to avoid GroupingErrors.
 
 DATABASE SCHEMA:
 {schema}
