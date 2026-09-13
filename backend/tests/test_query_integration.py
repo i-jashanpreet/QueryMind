@@ -148,3 +148,60 @@ class TestConversationFlow:
         
         mock_generate_sql.assert_not_called()
         mock_db_execute.assert_not_called()
+
+
+class TestSchemaIntelligenceIntegration:
+    """Day 8: Verify Schema Intelligence is wired into the /query pipeline."""
+
+    @patch("app.services.text_to_sql.SchemaIntelligence.get_relevant_schema")
+    def test_clarification_query_does_not_invoke_schema_intelligence(self, mock_get_relevant):
+        """Ambiguous queries should stop at clarification — never reach SchemaIntelligence."""
+        resp = client.post("/query", json={"question": "Show me the best products"})
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["needs_clarification"] is True
+        assert data["sql"] is None
+        mock_get_relevant.assert_not_called()
+
+    def test_revenue_query_gets_relevant_schema_context(self):
+        """A clear 'top 5 by revenue' query should route through SchemaIntelligence
+        and ultimately return results (end-to-end)."""
+        resp = client.post("/query", json={"question": "Show me the top 5 products by revenue"})
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["needs_clarification"] is False
+        assert data["sql"] is not None
+        assert data["results"] is not None
+
+    @patch("app.services.text_to_sql.SchemaIntelligence.get_relevant_schema")
+    def test_schema_intelligence_called_when_analysis_present(self, mock_get_relevant):
+        """When generate_sql receives an analysis, SchemaIntelligence should be invoked."""
+        from app.database import engine as db_engine
+        from app.schemas.analysis import QueryAnalysis
+        from app.schemas.schema_context import RelevantSchemaContext, SchemaTable, SchemaColumn
+
+        # Set up the mock to return a minimal schema
+        mock_schema = RelevantSchemaContext(tables=[
+            SchemaTable(
+                name="products",
+                columns=[SchemaColumn(name="id", data_type="INTEGER", is_primary_key=True)]
+            )
+        ])
+        mock_get_relevant.return_value = mock_schema
+
+        analysis = QueryAnalysis(
+            question="How many products?",
+            intent="aggregation",
+            entities=["products"],
+            metric="count"
+        )
+
+        from app.services.text_to_sql import generate_sql
+        try:
+            generate_sql(question="How many products?", engine=db_engine, analysis=analysis)
+        except Exception:
+            pass  # SQL generation may fail with mocked schema, that's OK
+
+        mock_get_relevant.assert_called_once()

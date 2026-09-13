@@ -78,6 +78,7 @@ class TextToSQLError(Exception):
 
 
 from app.schemas.analysis import QueryAnalysis
+from app.services.schema_intelligence import SchemaIntelligence
 
 def generate_sql(question: str, engine: Engine, analysis: QueryAnalysis | None = None) -> str:
     """
@@ -104,7 +105,11 @@ def generate_sql(question: str, engine: Engine, analysis: QueryAnalysis | None =
     """
     # 1 — schema
     try:
-        schema_text = get_schema_context(engine)
+        if analysis:
+            relevant_schema = SchemaIntelligence.get_relevant_schema(analysis, engine)
+            schema_text = relevant_schema.to_llm_string()
+        else:
+            schema_text = get_schema_context(engine)
     except Exception as exc:
         raise TextToSQLError(f"Failed to read database schema: {exc}") from exc
 
