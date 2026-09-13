@@ -28,17 +28,17 @@ export default function ClarificationCard({ clarification, onSubmit, disabled }:
         )}
       </div>
 
-      {clarification.options.length > 0 && (
+      {clarification.options && Array.isArray(clarification.options) && clarification.options.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
           {clarification.options.map((opt, i) => (
             <Button
-              key={i}
+              key={opt?.value || i}
               variant="outline"
               disabled={disabled}
               className="justify-start h-auto py-2.5 px-3 text-left font-normal bg-secondary/30 hover:bg-secondary/60 border-border/40"
-              onClick={() => onSubmit(opt.value)}
+              onClick={() => onSubmit(opt?.value)}
             >
-              {opt.label}
+              {opt?.label || opt?.value || "Option"}
             </Button>
           ))}
         </div>
