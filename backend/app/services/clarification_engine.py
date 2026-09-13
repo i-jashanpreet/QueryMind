@@ -1,7 +1,35 @@
+import re
+
 from app.schemas.analysis import QueryAnalysis
 from app.schemas.clarification import ClarificationResponse, ClarificationOption
 
+
 class ClarificationEngine:
+    # Supported ranking metrics and the patterns that count as explicit
+    # user evidence.  Each key is the canonical metric value; the list
+    # holds regex patterns that match the user's original question text.
+    SUPPORTED_METRICS: dict[str, list[str]] = {
+        "revenue":    [r"\brevenue\b"],
+        "units_sold": [r"\bunits[\s_]sold\b"],
+        "rating":     [r"\brating\b"],
+        "profit":     [r"\bprofit\b"],
+    }
+
+    @classmethod
+    def _question_has_explicit_metric(cls, question: str) -> str | None:
+        """Return the canonical metric value if the *user's original
+        question* explicitly mentions a supported ranking metric.
+
+        Returns ``None`` when no explicit metric is found — even if the
+        LLM hallucinated one in ``analysis.metric``.
+        """
+        q_lower = question.lower()
+        for metric_value, patterns in cls.SUPPORTED_METRICS.items():
+            for pat in patterns:
+                if re.search(pat, q_lower):
+                    return metric_value
+        return None
+
     @classmethod
     def generate(cls, analysis: QueryAnalysis) -> ClarificationResponse:
         # RULE 1 & 6: Explicit ambiguity / Do not over-clarify
@@ -21,14 +49,27 @@ class ClarificationEngine:
                 reason="The target entity is missing."
             )
 
-        # RULE 2: Ranking metric ambiguity
-        is_ranking = analysis.intent == "ranking" or any(w in analysis.question.lower() for w in ["best", "top"])
-        is_ambiguous_ranking = is_ranking and not analysis.metric
-        if is_ambiguous_ranking:
+        # Determine whether this is a ranking-style query
+        is_ranking = analysis.intent == "ranking" or any(
+            w in analysis.question.lower() for w in ["best", "top"]
+        )
+
+        # Check whether the user's ORIGINAL question text contains an
+        # explicit supported metric — do NOT trust analysis.metric alone,
+        # because the LLM may have hallucinated / inferred it.
+        explicit_metric = cls._question_has_explicit_metric(analysis.question)
+
+        # RULE 2: Ranking metric ambiguity — trigger clarification when
+        # the user did NOT explicitly state a metric in the question.
+        if is_ranking and not explicit_metric:
             return ClarificationResponse(
                 needs_clarification=True,
                 clarification_type="ranking_metric",
-                question="What do you mean by 'best products'?" if "product" in analysis.question.lower() else "What metric should I use for ranking?",
+                question=(
+                    "What do you mean by 'best products'?"
+                    if "product" in analysis.question.lower()
+                    else "What metric should I use for ranking?"
+                ),
                 options=[
                     ClarificationOption(label="Highest revenue", value="revenue"),
                     ClarificationOption(label="Most units sold", value="units_sold"),
@@ -52,10 +93,11 @@ class ClarificationEngine:
                 ],
                 reason="A time range is missing."
             )
-            
-        # OVERRIDE: If it's a ranking query that has an explicit metric and entities, 
-        # the LLM's uncertainty is likely a false positive. We can proceed.
-        if is_ranking and analysis.metric and analysis.entities:
+
+        # OVERRIDE: If it's a ranking query with an explicit metric in
+        # the user's question AND entities are present, the LLM's
+        # uncertainty is a false positive — proceed without clarification.
+        if is_ranking and explicit_metric and analysis.entities:
             return ClarificationResponse(needs_clarification=False)
 
         # RULE 5: Existing analyzer-generated clarification
@@ -69,3 +111,4 @@ class ClarificationEngine:
             options=[],
             reason=reason
         )
+

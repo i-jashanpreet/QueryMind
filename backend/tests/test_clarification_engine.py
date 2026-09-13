@@ -193,3 +193,76 @@ def test_explicit_ranking_metric_profit_override():
     )
     resp = ClarificationEngine.generate(analysis)
     assert resp.needs_clarification is False
+
+
+# ═══════════════ Regression: hallucinated metric on ambiguous queries ═══════════════
+
+
+def test_best_products_with_hallucinated_metric_still_clarifies():
+    """Even if the LLM returns metric='rating', 'best products' has no
+    explicit metric in the question text and must trigger clarification."""
+    analysis = QueryAnalysis(
+        question="Show me the best products",
+        intent="ranking",
+        entities=["products"],
+        metric="rating",             # LLM hallucinated
+        needs_clarification=True
+    )
+    resp = ClarificationEngine.generate(analysis)
+    assert resp.needs_clarification is True
+    assert resp.clarification_type == "ranking_metric"
+    assert len(resp.options) >= 2
+
+
+def test_top_products_with_hallucinated_metric_still_clarifies():
+    """'top products' without explicit metric must clarify even when LLM
+    infers metric='revenue'."""
+    analysis = QueryAnalysis(
+        question="Show me the top products",
+        intent="ranking",
+        entities=["products"],
+        metric="revenue",            # LLM hallucinated
+        needs_clarification=True
+    )
+    resp = ClarificationEngine.generate(analysis)
+    assert resp.needs_clarification is True
+    assert resp.clarification_type == "ranking_metric"
+
+
+def test_best_products_metric_none_still_clarifies():
+    """'best products' with metric=None must always clarify."""
+    analysis = QueryAnalysis(
+        question="Show me the best products",
+        intent="ranking",
+        entities=["products"],
+        metric=None,
+        needs_clarification=True
+    )
+    resp = ClarificationEngine.generate(analysis)
+    assert resp.needs_clarification is True
+    assert resp.clarification_type == "ranking_metric"
+
+
+# ═══════════════ Explicit metric detection helper ═══════════════
+
+
+def test_question_has_explicit_metric_revenue():
+    assert ClarificationEngine._question_has_explicit_metric("top 5 by revenue") == "revenue"
+
+def test_question_has_explicit_metric_units_sold():
+    assert ClarificationEngine._question_has_explicit_metric("top products by units sold") == "units_sold"
+
+def test_question_has_explicit_metric_units_underscore_sold():
+    assert ClarificationEngine._question_has_explicit_metric("sort by units_sold") == "units_sold"
+
+def test_question_has_explicit_metric_rating():
+    assert ClarificationEngine._question_has_explicit_metric("best by rating") == "rating"
+
+def test_question_has_explicit_metric_profit():
+    assert ClarificationEngine._question_has_explicit_metric("top products by profit") == "profit"
+
+def test_question_has_no_explicit_metric():
+    assert ClarificationEngine._question_has_explicit_metric("show me the best products") is None
+
+def test_question_has_no_explicit_metric_top():
+    assert ClarificationEngine._question_has_explicit_metric("show me the top products") is None
